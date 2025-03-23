@@ -7,6 +7,7 @@ import Form from 'react-bootstrap/Form'
 import Button from 'react-bootstrap/Button'
 import Stack from 'react-bootstrap/Stack'
 import { AudioConfig, SpeechConfig, SpeechRecognizer } from 'microsoft-cognitiveservices-speech-sdk'
+import { summarizeTextWithAzure } from './Summarization';
 
 const API_KEY = process.env.REACT_APP_COG_SERVICE_KEY
 const API_LOCATION = process.env.REACT_APP_COG_SERVICE_LOCATION
@@ -16,6 +17,9 @@ const STT_URL = "https://azure.microsoft.com/en-us/products/cognitive-services/s
 // this will be used for continuous speech recognition
 const sdk = require("microsoft-cognitiveservices-speech-sdk")
 const speechConfig = SpeechConfig.fromSubscription(API_KEY, API_LOCATION)
+speechConfig.speechRecognitionLanguage = "fr-FR";
+speechConfig.outputFormat = sdk.OutputFormat.Detailed; // Format détaillé pour inclure les informations des locuteurs
+speechConfig.requestWordLevelTimestamps(); // Inclut les horodatages
 
 // recognizer must be a global variable
 let recognizer
@@ -90,24 +94,22 @@ function Transcription() {
     }
 
     recognizer.recognized = (s, e) => {
-      setRecognisingText("")
+      setRecognisingText("");
       if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
-
-        // uncomment to debug
-        // console.log(`RECOGNIZED: Text=${e.result.text}`)
+        const detailedResult = JSON.parse(e.result.json); // Parse le résultat détaillé
+        const speakerId = detailedResult.NBest[0]?.SpeakerId || "Unknown Speaker"; // Identifie le locuteur
 
         setRecognisedText((recognisedText) => {
-          if (recognisedText === '') {
-            return `${e.result.text} `
+          if (recognisedText === "") {
+            return `Speaker ${speakerId}: ${e.result.text} `;
+          } else {
+            return `${recognisedText}\nSpeaker ${speakerId}: ${e.result.text} `;
           }
-          else {
-            return `${recognisedText}${e.result.text} `
-          }
-        })
-        textRef.current.scrollTop = textRef.current.scrollHeight
-      }
-      else if (e.result.reason === sdk.ResultReason.NoMatch) {
-        console.log("NOMATCH: Speech could not be recognized.")
+        });
+
+        textRef.current.scrollTop = textRef.current.scrollHeight;
+      } else if (e.result.reason === sdk.ResultReason.NoMatch) {
+        console.log("NOMATCH: Speech could not be recognized.");
       }
     }
 
@@ -191,9 +193,21 @@ function Transcription() {
                 {isRecognising ? 'Stop' : 'Start'}
               </Button>
               {(recognisedText !== "") && !isRecognising &&
-                <Button variant="secondary" onClick={() => export2txt(recognisedText)}>
-                  Export
-                </Button>
+                <>
+                  <Button variant="secondary" onClick={() => export2txt(recognisedText)}>
+                    Export
+                  </Button>
+                  <Button variant="info" onClick={async () => {
+                    try {
+                      const summary = await summarizeTextWithAzure(recognisedText);
+                      alert(`Résumé : ${summary}`);
+                    } catch (error) {
+                      alert("Erreur lors de la génération du résumé.");
+                    }
+                  }}>
+                    Résumer
+                  </Button>
+                </>
               }
             </Stack>
           </Form>
